@@ -1,0 +1,80 @@
+library(DT) 
+library(TCGAbiolinks)
+library(plyr)
+library(limma)
+library(SummarizedExperiment) 
+library(EDASeq)
+
+# Access to the data
+# Downloading data from TCGA data portal
+summary1 <- getProjectSummary("TCGA-BRCA")
+summary2 <- getSampleFilesSummary(project = "TCGA-BRCA")
+
+# 1.1 GDCquery
+query1 <- GDCquery(project = "TCGA-BRCA",
+                          data.category = "Transcriptome Profiling",
+                          data.type = "Gene Expression Quantification",
+                          workflow.type = "STAR - Counts")
+
+# Reconstruct the query based on sample grouping
+# query2 <- GDCquery(project = "TCGA-BRCA",
+                  # data.category = "Transcriptome Profiling",
+                  # data.type = "Gene Expression Quantification",
+                  # workflow.type = "STAR - Counts",
+                  # barcode = c(dataSmNT,dataSmTP,dataSmTM))
+
+# 1.2 GDCdownload
+help("GDCdownload")
+GDCdownload(query1,
+            method = "api",
+            files.per.chunk = 5) 
+# 1.3 GDCprepare
+help("GDCprepare") #Reads the data downloaded and prepare it into an R object
+data <- GDCprepare(query = query1,
+                   save = T,
+                   save.filename = "TGCA-BRCA.rda",
+                   summarizedExperiment = TRUE)
+help(datatable) #Create an HTML table widget using the DataTables library
+datatable(as.data.frame(colData(data)), 
+  options = list(scrollX = TRUE, keys = TRUE, pageLength = 5), 
+  rownames = FALSE)
+
+# 2. A SummarizedExperiment object has three main matrices that can be accessed using the SummarizedExperiment package
+# a. assay to get expression matrix
+data1 <- assay(data) ## 60660*1231
+# b. rowRanges to get the range of values in each row (genes information)
+data2 <- rowRanges(data)
+colnames(a)
+# c. colData to get the sample information (patient, batch, sample type, etc)
+data3 <- colData(data)
+b <- as.data.frame(data3)
+colnames(b)
+write.csv(colnames(b),file = "sample.csv")
+table(b$shortLetterCode)   
+# NT   TM   TP 
+# 113   7  1111 
+
+barcode <- getResults(query1,cols=c("cases")) # 1231 cases
+#Filter samples from the results: TP, NT, TM
+help("TCGAquery_SampleTypes")
+dataSmNT <- TCGAquery_SampleTypes(barcode = barcode,
+                                  typesample = "NT")
+dataSmTP <- TCGAquery_SampleTypes(barcode = barcode,
+                                  typesample = "TP")
+dataSmTM <- TCGAquery_SampleTypes(barcode = barcode,
+                                  typesample = "TM")
+
+# 3.  The clinical data
+# Original source of the data: get XML files
+# The process to get data directly from the XML are: 1. Use GDCquery and GDCDownload functions to search/download either biospecimen or clinical XML files 2. Use GDCprepare_clinic function to parse the XML files.
+query3 <- GDCquery( project = "TCGA-BRCA", 
+                    data.category = "Clinical", 
+                    data.format = "bcr xml")
+GDCdownload(query3)
+help("GDCquery_clinic")
+# Retrieve clinical information
+clinical.patient <- GDCprepare_clinic(query3,clinical.info = "patient")
+clinical.drug <- GDCprepare_clinic(query3,clinical.info = "drug")
+
+
+
