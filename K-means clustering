@@ -1,0 +1,149 @@
+rm(list = ls())
+setwd("H:/2. k-means")
+
+##Import data
+df <- read.csv(file = "gse_scale.csv",header = T,row.names = 1)
+DF <- read.csv(file = "GSE111653_GilkesSalmonCounts.csv",header = T,row.names = 1)
+a <- read.csv(file = "resSig.csv",header = T,row.names = 1)
+a <- a[order(a$log2FoldChange,decreasing = T),]
+## Select top20 differentially expressed genes
+b <- c(rownames(a)[c(1:20)],rownames(a)[4347:4348])
+index <- match(b,rownames(DF))
+index <- index[!is.na(index)]
+df2 <- DF[index,]
+df3 <- as.data.frame(t(df2))
+df4 <- scale(df3) 
+df5 <- log10(df3+0.01)  
+
+##Load packages
+library(cluster)
+
+## Determine the optimal number of clusters
+fviz_nbclust(df5, kmeans, method = "wss")
+#calculate gap statistic based on number of clusters
+gap_stat <- clusGap(df5,
+                    FUN = kmeans,
+                    nstart = 10,
+                    K.max = 5,
+                    B = 50)
+
+#plot number of clusters vs. gap statistic
+fviz_gap_stat(gap_stat)
+
+##kmeans
+set.seed(256)
+km <- kmeans(df5, centers = 2, nstart = 25)
+km
+cluster <-  as.data.frame(km[["cluster"]])
+table(cluster)
+write.csv(cluster,file = "cluster.csv")
+
+## factoextra: plot results of final k-means model
+fviz_cluster(km, data = df5,
+             ggtheme = theme_minimal(),
+             labelsize=7,
+             ellipse.type = "convex")
+
+# Using the ggpubr R package
+library(ggpubr)
+# Dimension reduction using PCA
+res.pca <- prcomp(df5,  scale = F)
+# Coordinates of individuals
+ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord)
+# Add clusters obtained using the K-means algorithm
+ind.coord$cluster <- factor(km$cluster)
+# Add Species groups from the original data sett
+df5$condition <- rep(c("1_percent","20_percent"),31)
+ind.coord$condition <- df5$condition
+write.csv(ind.coord,"ind coord.csv")
+
+# Data inspection
+head(ind.coord)
+# Percentage of variance explained by dimensions
+eigenvalue <- round(get_eigenvalue(res.pca), 1)
+variance.percent <- eigenvalue$variance.percent
+head(eigenvalue)
+custom_colors <- c("1" = "blue", "2" = "red")
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2", 
+  color = "cluster", palette = custom_colors, ellipse = TRUE, ellipse.type = "convex",
+  shape = "condition",size = 5,  legend = "right", ggtheme = theme_bw(),
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+) +
+  stat_mean(aes(color = cluster), size = 7,shape = 13 )
+
+
+## Add cluster centroid using the stat_mean() [ggpubr] R function  
+
+########################################################################
+mat <- DF[,c(3,4,9,10,17,18,21,22,35,36,37,38,45,46,53,54)]
+mat <- mat[index,] # 16*22 
+mat_center <- mat - rowMeans(mat)
+mat_scale <- t(scale(t(mat)))
+anno_col <- read.csv(file = "info.csv",header = T,row.names = 1)
+anno_row <- read.csv(file = "top22.csv",header = T,row.names = 1)
+colnames(anno_row) <- "1% versus 20%"
+
+#breaks
+paletteLength <- 50
+myColor <- colorRampPalette(c("blue", "white", "red"))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(-3, 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(6/paletteLength, 6, length.out=floor(paletteLength/2)))
+
+htmap <- pheatmap::pheatmap(mat_scale,
+                            scale = "none",
+                            annotation_col = anno_col,
+                            annotation_row = anno_row,
+                            cluster_rows = T,
+                            cluster_cols = F,
+                            angle_col = 45,
+                            color = myColor,
+                            legend_breaks=seq(-3,3,2),
+                            breaks = myBreaks,
+                            main = "Heatmap of 22genes")
+
+###############################################################################
+library(ComplexHeatmap)
+library(circlize)
+list.files()
+a <- read.csv("top20-8cellline.csv",header = T,row.names = 1)
+cluster <- read.csv("cluster1.csv",header = T,row.names = 1)
+anno_col <- colnames(a)
+col_fun = colorRamp2(c(-2, 0, 2), c("#2fa1dd", "white", "#f87669"))
+# b <- t(scale(t(a)))
+colnames(a) <- cluster$cellline
+top_annotation = HeatmapAnnotation(
+  cluster1 = anno_block(gp = gpar(fill = c("#f87669", "#2fa1dd")),
+                        labels = c("cluster1","cluster2"),
+                        labels_gp = gpar(col = "white", fontsize = 12)),
+  CellLine=cluster$cellline,
+  col = list(
+    foo = col_fun,
+    bar = c("a" = "red", "b" = "green", "c" = "blue","d"="yellow")),
+  condition=cluster$condition)
+
+# right_ha <- rowAnnotation("1%versus20%" = anno_row$`1% versus 20%`)
+ComplexHeatmap::Heatmap(a,name = " ",
+                             col = col_fun,
+                             top_annotation = top_annotation,
+                             column_split = cluster$cluster ,
+                             show_heatmap_legend = T,
+                             border = T,
+                             show_column_names = T,
+                             show_row_names = T,
+                             cluster_columns = F,
+                             column_title = "Heatmap of 8 Cell lines",
+                             rect_gp = gpar(col = "white", lwd = 1),
+                             column_names_rot=90,
+                             column_names_gp = grid::gpar(fontsize = 15),
+                        
+                             row_names_gp = grid::gpar(fontsize = 15))
+                             #right_annotation = right_ha)
+
+
+
+
+
