@@ -1,1 +1,3 @@
-# 2025.3.4
+# 标题
+Breast cancer stem cells (BCSCs) are responsible for drug resistance, recurrence, and metastasis of breast cancer. BCSCs are often found within the hypoxic niche of tumors, however, the metabolic adaptions that support BCSC maintenance and specification under hypoxic condition remain poorly understood. In this study, we reveal a critical role of long-chain fatty acid (FA) desaturation and elongation in promoting hypoxia-induced BCSC enrichment. Using a breast cancer-specific hypoxia signature developed by machine learning method, we analyzed transcriptomic and metabolomic data from breast cancer patient samples. 
+These codes demonstrate how we constructed the BC-HypoSig， a breast cancer specific transcriptomic signature that reflects cellular responses to hypoxia.
