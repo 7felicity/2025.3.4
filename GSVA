@@ -1,0 +1,49 @@
+rm(list = ls())
+library(GSVA)
+library(SummarizedExperiment)
+library(TCGAbiolinks)
+setwd("H:/4. GSVA")
+list.files()
+## 1. expression metrix_SummarizedExperiment object
+# A gene expression data matrix with rows corresponding to genes and columns to samples
+# TGCA-BRCA
+data1 <- load("TGCA-BRCA.rda" )
+data1 <- as.matrix(data1)
+
+# 2. Gene set definitions
+g1 <- read.csv(file = "44gene.csv",header = T)
+g2 <- read.csv(file = "BUFFA_HYPOXIA_METAGENE.csv",header = T)
+g3 <- read.csv(file = "WINTER_HYPOXIA_METAGENE.csv",header = T)
+g4 <- read.csv(file = "FARDIN_HYPOXIA_11.csv",header = T)
+g5 <- read.csv(file = "ELVIDGE_HYPOXIA_UP.csv",header = T)
+g6 <- read.csv(file = "HALLMARK_HYPOXIA.csv",header = T)
+g7 <- read.csv(file = "Chi-common hypoxia genes.csv",header = T)
+gs <- list(g1$SYMBOL,g2$BUFFA_HYPOXIA_METAGENE,g3$WINTER_HYPOXIA_METAGENE,g4$FARDIN_HYPOXIA_11,g5$ELVIDGE_HYPOXIA_UP,g6$HALLMARK_HYPOXIA,g7$Chi.common.hypoxia.genes)
+names(gs) <- c("BC-HypoSig","Buffa","Winter","Fradin","Elvidge","Hallmark","Chi")
+# 3. GSVA
+gsvaPar1 <- gsvaParam(data1, 
+                      gs,
+                      minSize=5, 
+                      maxSize=500)
+gsva_es1 <- gsva(gsvaPar1, 
+                verbose = T)
+
+write.csv(gsva_es1,file = "GSVA.csv")
+
+## Plot Correlation Heatmap
+s <- read.table(file = "corralation_GSVA.txt", sep = "\t", header = T, row.names = 1)
+class(s)
+s <- as.matrix(s)
+corrplot(s,
+type = "lower",
+method = "circle",
+is.corr = F,
+cl.pos = "b", # Position of the color legend
+addCoef.col = "black", # Set the color of the correlation coefficients
+addCoefasPercent = F, # Display correlation coefficients as decimals
+col.lim = c(0.3, 1),
+col = col3,
+tl.pos = "ld", # Display variable names on the left and diagonal
+tl.cex = 1.5, # Size of the variable labels
+tl.col = "black") # Color of the variable labels
+
