@@ -1,0 +1,148 @@
+rm(list = ls())
+setwd("H:/1. GSE111653")
+# Input data
+library(readxl)
+library(DESeq2)
+library(tidyverse)
+
+# 1. un-normalized counts:GEO_GSE111653£ºSalmonCounts(un-normalized counts; gene level)
+counts <- read.csv(file = "GSE111653_GilkesSalmonCounts_2.csv",header = T,row.names = 1,stringsAsFactors=FALSE)
+dim(counts) ## 56470    62
+
+## build countdata
+countdata <- round(counts) 
+
+## build coldata
+condition <- factor(rep(x=c("20_percent","1_percent"),times=31))
+
+CellLine <- colnames(countdata)
+list <- strsplit(CellLine,split = "_")
+list <- unlist(list)
+CellLine <- as.factor(list[seq(1,124,2)])
+class(CellLine)
+
+coldata <- data.frame(row.names=colnames(count), condition,CellLine)
+coldata
+
+## build dds
+ddsRaw <- DESeqDataSetFromMatrix(countData = countdata,
+                                 colData = coldata,
+                                 design = ~ CellLine+condition)
+head(ddsRaw)
+
+## 2. pre-filtering:remove rows that have no or nearly no information about the amount of gene expression.
+keep <- rowSums(counts(ddsRaw)) > 1
+dds <- ddsRaw[keep,]
+dim(dds)# 43439
+
+## 3. define the factor levels
+dds$condition #Levels: 1_percent 20_percent
+dds$condition <- factor(dds$condition, levels = c("20_percent","1_percent")) #Levels: 20_percent 1_percent
+
+# 1. Datatransformation & visualization
+## count data transformation 
+# vst
+vsd <- vst(dds, blind = FALSE)
+head(assay(vsd), 3)
+a<- colData(vsd)
+b <- assay(vsd)
+write.csv(b,"GSE111653_31CL_VST.csv")
+# plot meanSdPlot to see homoscedasticity of vsd
+library(vsn)
+msd <- meanSdPlot(assay(vsd)[,1:2], ranks = FALSE)
+library("ggplot2")
+msd$gg + ggtitle("BT20_meanSdPlot_VST")  
+
+## 2. Exploratory analysis and visualization
+# assess overall similarity between samples
+# input: calculate sample Poisson Distance
+library("PoiClaClu")
+poisd <- PoissonDistance(t(counts(dds)[,seq(1,61,2)]))
+samplePoisDistMatrix <- as.matrix( poisd$dd )
+rownames(samplePoisDistMatrix) <- dds$CellLine[seq(1,61,2)]
+colnames(samplePoisDistMatrix) <- NULL
+
+library("RColorBrewer")
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+library("pheatmap")
+pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = colors,
+         main = "Heatmap of sample-to-sample distances in 1_percent")
+
+# PCA plot
+# input: vst
+pcaData <- plotPCA(vsd,returnData = TRUE)
+pcaData
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(x = PC1, y = PC2, color = group)) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  ggtitle("PCA plot of all genes")
+
+sum(res.05$padj < 0.05, na.rm=TRUE) # 4348
+resSig <- res.05[!is.na(res.05$padj),]
+resSig <- subset(resSig, padj < 0.05)
+range(resSig$log2FoldChange) # -1.258584  4.421165
+
+##############################################################################
+# Differential expression analysis
+# 1. running
+dds <- DESeq(dds)
+
+#2. extract results
+res <- results(dds)
+res #condition 1 percent vs 20 percent 
+res.05 <- results(dds,alpha = 0.05)
+res.05
+summary
+
+# 3.  get the significant genes 
+write.csv(resSig,file = "resSig.csv")
+
+# 4. exporting results
+resDF <- as.data.frame(res.05)
+write.csv(resDF, file = "results_res.05.csv")
+resDF2 <- as.data.frame(resSig)
+write.csv(resDF2, file = "results_resSig.csv")
+
+
+################################################################################
+## plotting results of significant genes
+# 1. MA-plot
+# Shrinkage of effect size 
+library(apeglm)
+# input
+resultsNames(dds)
+res_apeglm <- lfcShrink(dds,coef = "condition_1_percent_vs_20_percent",type="apeglm")
+res_apeglm_DF <- as.data.frame(res_apeglm)
+
+# DESeq2::plotMA
+plotMA <- plotMA(res_apeglm,alpha=0.05, ylim = c(-2, 4),main="MA-plot",
+                 colNonSig = "gray60",colSig = "blue",colLine = "grey40")
+
+# ggpubr::ggmaplot
+library(ggpubr)
+ggmaplot(res_apeglm_DF,main = "1_percent versus 20_percent",
+         fdr = 0.05, fc =1.5, size = 0.8,
+         legend = "top", top = 20,font.main = "bold",
+         palette = c("#B31B21", "#1465AC", "darkgray"),
+         font.label = c("bold", 8),
+         ggtheme = ggplot2::theme_minimal())+
+  theme(plot.title = element_text(size = 10))
+
+#2. heatmap_pheatmap
+library(tidyverse)
+library("pheatmap")
+resDF2%>%
+  filter(log2FoldChange < -2)%>%
+  mutate(type="down")-> topdown 
+
+resDF2%>%
+  filter(log2FoldChange > 2)%>%
+  mutate(type="up")-> topup 
+
