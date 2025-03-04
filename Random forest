@@ -1,0 +1,332 @@
+## Data Preprocessing
+rm(list = ls())
+library(caret)
+library(AppliedPredictiveModeling)
+library(tidyverse)
+library(ggplot2)
+library(party)
+library(randomForest)
+library(varSelRF)
+library(pROC)
+
+setwd("H:/3. Random Forest")
+
+## Input
+df1 <- read.csv(file = "2022-12-20_dataread.csv" ,header = T, row.names = 1)
+# Remove 8 cell lines
+a <- c(3,4,9,10,17,18,21,22,35,36,37,38,45,46,53,54)
+b <- rownames(df1)[a]
+df1 <- df1[-a,] # 46*56470
+
+write.csv(df1,file = "23CL_raw.csv")
+# remove zero- and Near Zero-Variance Predictors
+nzv <- nearZeroVar(x=df2,
+                   freqCut = 95/5,
+                   uniqueCut = 10)
+##filter 19273 variables
+df2 <- df2[,-nzv] # 46*37197
+# remove correlated preditors
+cormatrix <- cor(df2)
+highcor <- findCorrelation(x=cormatrix,
+                           cutoff = 0.9)
+##filter 9422 genes 
+df3 <- df2[,-highcor] # 46*26903
+
+cor1 <- cor(df3)
+summary(cor1[upper.tri(1)])
+
+write.csv(x=df2,file = "23CL_preprocessing.csv")
+##############################################################################################################
+## randomforest
+rm(list = ls())
+library(caret)
+library(AppliedPredictiveModeling)
+library(tidyverse)
+library(ggplot2)
+library(party)
+library(randomForest)
+library(varSelRF)
+library(pROC)
+
+setwd("H:/3. Random Forest")
+
+## Input
+df <- read.csv(file = "23CL_preprocessing.csv" ,header = T, row.names = 1)
+
+df1 <- as.data.frame(lapply(df,as.numeric))
+summary(head(df1))
+# 46*37197
+## build label(factor)
+label <- rep(x=c("1_percent","20_percent"),times=23)
+label <- factor(x=label,levels = c("1_percent","20_percent"),ordered=F)
+class(label)
+
+prep_scale <- preProcess(x=df1,
+                         method = c("center","scale"))
+data_scale <- predict(object = prep_scale,
+                      newdata = df1)
+data_scale <- as.data.frame(data_scale)
+
+#verification
+a <- data_scale$X5S_rRNA
+summary(a)
+b <- df1$X5S_rRNA
+summary(b)
+scale(b)
+
+## 1. data splitting
+data_scale$label <- label
+df2 <- data_scale
+summary(df2)
+
+set.seed(123)
+trainIndex <- createDataPartition(y=data_scale$label,
+                                  p=.75,
+                                  times=1,
+                                  list = F)
+train <- df2[trainIndex,]
+test <- df2[-trainIndex,]
+table(train$label)
+
+##2. model training & tuning 
+library(randomForest)
+set.seed(122) ##ntr=500
+train_rf <- randomForest(x=train[,-length(train)],
+                             y=train$label,
+                             ntree = 1500,
+                             importance = T,
+                             proximity = T)
+train_rf  
+plot(train_rf) 
+
+#test on the training set
+train_predict <- predict(train_rf, train)
+compare_train <- table(train_predict, train$label)
+compare_train
+sum(diag(compare_train)/sum(compare_train))
+
+#Evaluate using the test set
+test_predict <- predict(train_rf, test)
+compare_test <- table(test$label, test_predict, dnn = c('Actual', 'Predicted'))
+compare_test
+
+##3. variance importance
+summary(train_rf)
+Imp <- train_rf$importance
+head(Imp)
+
+#Sort by feature importance in descending order
+Imp2 <- Imp2[order(Imp2$MeanDecreaseAccuracy,
+                          decreasing = T),]
+head(Imp2)
+
+write.csv(Imp2, 'Imp2.csv', col.names = NA, quote = FALSE)
+
+#Plot the top 30 most important RNAs.
+varImpPlot(train_rf, 
+           n.var = min(30, nrow(train_rf$importance)),
+           main = 'Top 30 - variable importance')
+
+##4. cross validation
+# 5 repeats of 10-fold cross-validation
+set.seed(123)
+train_cv <- replicate(5,
+                      rfcv(trainx = train[,-ncol(train)],
+                           trainy = train$label,
+                           cv.fold = 10,
+                           step = 1.5),
+                      simplify = F)
+train_cv
+#Extract validation results for plotting
+train_cv1 <- data.frame(sapply(train_cv, 
+                                   "[[","error.cv"))
+train_cv1$name <- rownames(train_cv1)
+train_cv1 <- reshape2::melt(data = train_cv1,
+                                id="name")
+class(train_cv1$name)
+##Convert the 'name' column to a numeric type
+train_cv1$name <- as.numeric(as.character(train_cv1$name))
+
+#Plot the fitted line graph
+library(ggplot2)
+library(splines)  
+p <- ggplot(data = train_cv1,
+            aes(x=name,
+                y=value))+
+  geom_smooth(se=F, #Display confidence interval around smooth
+              method = "glm",
+              formula = y~ns(x,6))+
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(colour = "black",
+                                        fill="transparent"))+
+  labs(title = "",
+       x="Number of RNAs",
+       y="Corss-validation")
+p
+
+#Extract 1000 important RNAs
+p + geom_vline(xintercept = 1000)
+Imp3 <- Imp2[order(Imp2$MeanDecreaseAccuracy,
+                           decreasing = T),]
+head(Imp3)
+write.csv(x=Imp3[1:1000,],
+            file = "gse_Imp_top1000.csv",quote = F)
+
+##5. Compact classifier
+list.files()
+Imp <- read.csv(file =  "Imp2.csv",header = T,row.names = 1)
+Imp <- Imp[order(Imp$MeanDecreaseAccuracy,decreasing = T),]
+Imp2 <- Imp[1:1000,]
+
+# data splitting
+set.seed(77)
+trainIndex <- createDataPartition(y=data_scale$label,
+                                  p=.75,
+                                  times=1,
+                                  list = F)
+train <- df2[trainIndex,]
+test <- df2[-trainIndex,]
+
+#The training set and test set
+index <- match(rownames(Imp2),colnames(train))
+train2 <- train[,index]
+train2$label <- train$label
+table(train2$label)
+#  1_percent 20_percent 
+# 18         18 
+
+index2 <- match(rownames(Imp2),colnames(test))
+test2 <- test[,index2]
+test2$label <- test$label
+
+## randomForest
+set.seed(62)
+train_rf2 <- randomForest(x=train2[,-length(train2)], 
+                          y=train2$label,
+                                  ntree=300,
+                                  importance =T,
+                                  proximity=T)
+train_rf2 
+plot(train_rf2)
+#test on the training set
+train_predict2 <- predict(train_rf2, train2)
+compare_train2 <- table(train_predict2, train2$label)
+compare_train2
+
+#Evaluate using the test set
+test_predict2 <- predict(train_rf2, test2)
+compare_test2 <- table(test2$label, test_predict2, 
+                       dnn = c('Actual', 'Predicted'))
+compare_test2
+## variance importance
+Imp_2nd <- train_rf2$importance
+head(Imp_2nd)
+Imp_3 <- Imp_3[order(Imp_3$MeanDecreaseAccuracy,
+                                   decreasing = T),]
+
+write.csv(Imp_3, 'Model3-top200.csv', quote = FALSE)
+
+#Plot the top 30 most important RNAs.
+varImpPlot(train_rf2, 
+           n.var = min(30, nrow(train_rf2$importance)),
+           main = 'Top 30 - variable importance')
+
+## cross validation
+# 5 repeats of 10-fold cross-validation
+set.seed(888)
+train2_cv <- replicate(5,rfcv(trainx = train2[,-ncol(train2)],
+                                    trainy = train2$label,
+                                    cv.fold = 10,
+                                    step = 2),
+                               simplify = F)
+train2_cv
+##Extract validation results for plotting
+train2_cv1 <- data.frame(sapply(train2_cv, 
+                                        "[[","error.cv"))
+
+train2_cv1$name <- rownames(train2_cv1)
+train2_cv1 <- reshape2::melt(data = train2_cv1,
+                                     id="name")
+class(train2_cv1$name)
+# Convert the 'name' column to a numeric type
+train2_cv1$name <- as.numeric(as.character(train2_cv1$name))
+
+#Plot the fitted line graph.
+p <- ggplot(data = train2_cv1,
+            aes(x=name,
+                y=value))+
+  geom_smooth(se=F, #Display confidence interval around smooth?
+              method = "glm",
+              formula = y~ns(x,5))+
+  theme(panel.grid = element_blank(),
+        panel.background = element_rect(colour = "black",
+                                        fill="transparent"))+
+  labs(title = "",
+       x="Number of RNAs",
+       y="Corss-validation")
+p
+
+##6. Plot heatmap
+library(tidyverse)
+library("pheatmap")
+## 48gene
+var <- read.csv(file = "48gene.csv",header = T)
+
+##1. res.05
+dat <- read.csv(file = "2023-5-30_results_res05.csv",header = T,row.names = 1)
+index <- match(var$A,rownames(dat))
+dat2 <- dat[index,]
+write.csv(dat2,file = "res0.5_48gene.csv")
+##2. raw data
+df4 <- read.csv(file = "GSE111653_23_VST.csv",header = T,row.names = 1)
+hypo <- read.csv(file = "45gene.csv")
+index1 <- match(hypo$SYMBOL,rownames(df4))
+df5 <- df4[index1,]
+
+mat  <- df5
+mat_center <- mat - colMeans(mat)
+mat_scale <- t(scale(t(mat)))
+
+library(readxl)
+anno_col <- read.csv(file = "anno_col.csv",header = T,row.names = 1)
+anno_row <- read.csv(file = "anno_row.csv",header = T)
+# colnames(anno_row) <- "1% versus 20%"
+
+index2 <- match(rownames(df5),anno_row$symbol)
+anno_row <- anno_row[index2,]
+
+# ComplexHeatmap
+library(ComplexHeatmap)
+library(circlize)
+
+col_fun = colorRamp2(c(-2, 0, 2), c("#2fa1dd", "white", "#f87669"))
+
+top_annotation = HeatmapAnnotation(
+  cluster1 = anno_block(gp = gpar(fill = c("#2fa1dd","#f87669")),
+                        labels = c("20 percent","1 percent"),
+                        labels_gp = gpar(col = "white", fontsize = 12)),
+                         CellLine=anno_col$CellLine)
+
+colnames(mat_scale) <- anno_col$CellLine
+
+Condition <- anno_col$Condition
+type <- factor(anno_row$type)
+right_ha <- rowAnnotation("1% versus 20%"=anno_row$type,
+                          col= list("1% versus 20%"=c(up="#FFBBFF",down="#87CEFA")))
+
+ComplexHeatmap::Heatmap(mat_scale,name = "mat",
+                             col = col_fun,
+                             top_annotation = top_annotation,
+                             right_annotation = right_ha,
+                             column_split = Condition,
+                             row_split = type,
+                             show_heatmap_legend = T,
+                             border = T,
+                             show_column_names = T,
+                             show_row_names = T,
+                             column_title = "Heatmap of 45genes",
+                             rect_gp = gpar(col = "white", lwd = 1),
+                             column_names_gp = grid::gpar(fontsize = 15),
+                             row_names_gp = grid::gpar(fontsize = 15),
+                             )
+
