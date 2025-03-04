@@ -1,29 +1,11 @@
----
-title:DESeq2_GSE111653:gene-level exploratory analysis and differential expression
-date:2023-3-8
-author:zzq
-output:
-file: 
-  2023-3-7_resSig.csv
-  2023-3-7_results_res.05.csv
-  2023-3-7_results_resSig.csv
-plot:
-  meanSdPlot
-  Heatmap of sample-to-sample distances
-  PCA plot
-  MA plot
-  Heatmap_gene
-Html£º2023-3-7_My report
----
 rm(list = ls())
-###############################################################################
-setwd("H:/4. GSE111653/1. 2023-4-15_filter 7 cell lines/GSE111653_DESEQ2/2023-3-6_GSE111653_DESeq2_NEW")
+setwd("H:/1. GSE111653")
 # Input data
 library(readxl)
 library(DESeq2)
 library(tidyverse)
 
-# 1. un-normalized counts:GEO_GSE111653£ºSalmonCounts(un-normalized counts; gene level)
+# 1. un-normalized counts:GEO_GSE111653Â£ÂºSalmonCounts(un-normalized counts; gene level)
 counts <- read.csv(file = "GSE111653_GilkesSalmonCounts_2.csv",header = T,row.names = 1,stringsAsFactors=FALSE)
 dim(counts) ## 56470    62
 
@@ -57,7 +39,6 @@ dim(dds)# 43439
 dds$condition #Levels: 1_percent 20_percent
 dds$condition <- factor(dds$condition, levels = c("20_percent","1_percent")) #Levels: 20_percent 1_percent
 
-##############################################################################
 # 1. Datatransformation & visualization
 ## count data transformation 
 # vst
@@ -121,13 +102,13 @@ res.05
 summary
 
 # 3.  get the significant genes 
-write.csv(resSig,file = "2023-3-7_resSig.csv")
+write.csv(resSig,file = "resSig.csv")
 
 # 4. exporting results
 resDF <- as.data.frame(res.05)
-write.csv(resDF, file = "2023-3-7_results_res.05.csv")
+write.csv(resDF, file = "results_res.05.csv")
 resDF2 <- as.data.frame(resSig)
-write.csv(resDF2, file = "2023-3-7_results_resSig.csv")
+write.csv(resDF2, file = "results_resSig.csv")
 
 
 ################################################################################
@@ -165,17 +146,7 @@ resDF2%>%
   filter(log2FoldChange > 2)%>%
   mutate(type="up")-> topup 
 
-topgene <- rbind(topup,topdown)  
 
-mat  <- assay(vsd)[rownames(topgene),]
-
-mat <- mat[,-c(9,10,21,22,35,36,47,48,53,54,59,60)]
-mat_center <- mat - rowMeans(mat)
-mat_scale <- t(scale(t(mat)))
-anno_col <- as.data.frame(colData(vsd)[, c("condition","CellLine")])
-anno_row <- as.data.frame(topgene[,"type"])
-rownames(anno_row) <- rownames(topgene)
-colnames(anno_row) <- "1% versus 20%"
 
 
 
